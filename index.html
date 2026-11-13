@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Runner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f7f2; --ink: #4a4a48; --muted: #8a8a85; --card: #ffffff; --line: #deded8;
+    --accent: #2b7a5f; --hl: #fff1b8; --bad: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1d1e1c; --ink: #d4d4cf; --muted: #8d8d88; --card: #282927; --line: #3a3b38;
+      --accent: #6fd3a8; --hl: #4b4213; --bad: #f08a7e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1d1e1c; --ink: #d4d4cf; --muted: #8d8d88; --card: #282927; --line: #3a3b38;
+    --accent: #6fd3a8; --hl: #4b4213; --bad: #f08a7e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 240px 16px 24px; overflow-x: hidden;
+  }
+  .pixel { font-family: "Press Start 2P", ui-monospace, Menlo, monospace; }
+
+  /* ---- panel: camera + name / score / rank board (top-left) ---- */
+  #panel {
+    position: fixed; left: 12px; top: 12px; z-index: 10; height: 200px;
+    width: min(520px, calc(100vw - 24px));
+    display: flex; gap: 12px; padding: 10px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.08); font-size: 13px; line-height: 1.35;
+  }
+  .cam { position: relative; flex: 0 0 240px; height: 180px; background: #111; border-radius: 8px; overflow: hidden; }
+  .cam video, .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  #panel.nocam .cam video, #panel.nocam .cam canvas { visibility: hidden; }
+  #camMsg { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; color: #bbb; font-size: 12px; }
+  #camAction { position: absolute; left: 8px; bottom: 6px; font: 700 18px system-ui; color: #fff; text-shadow: 0 1px 3px #000; }
+  .tools { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
+  .tools button { font: 11px system-ui; padding: 3px 8px; border: 0; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; }
+  .side { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+  .side h2 { margin: 0; font-size: 16px; }
+  .side h3 { margin: 2px 0 0; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .hint { margin: 0; color: var(--muted); font-size: 12px; }
+  #nameInput { font: 600 16px system-ui; padding: 5px 8px; width: 100%; border: 2px solid var(--accent); border-radius: 8px; background: transparent; color: var(--ink); outline: none; }
+  .player { font-weight: 600; }
+  .score { font: 700 24px/1 ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  section { display: none; flex-direction: column; gap: 3px; }
+  body[data-state="name"] #sName,
+  body[data-state="ready"] #sPlay, body[data-state="play"] #sPlay,
+  body[data-state="over"] #sOver { display: flex; }
+  .overTitle { font-weight: 700; color: var(--bad); }
+  #board { margin: 0; padding: 0; list-style: none; overflow: auto; flex: 1; min-height: 0; font-variant-numeric: tabular-nums; }
+  #board li { display: grid; grid-template-columns: 20px 1fr auto; gap: 6px; padding: 1px 6px; border-radius: 6px; }
+  #board li span:first-child { color: var(--muted); text-align: right; }
+  #board li.me { background: var(--hl); font-weight: 700; }
+  #board li.empty { display: block; color: var(--muted); }
+
+  /* ---- game ---- */
+  #stage { position: relative; width: min(960px, 100%); }
+  #game { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  #banner {
+    position: absolute; left: 0; right: 0; top: 34%; text-align: center; font-size: clamp(9px, 1.4vw, 13px);
+    color: var(--ink); pointer-events: none;
+  }
+  body:not([data-state="ready"]) #banner { display: none; }
+  #over { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 4%; }
+  body[data-state="over"] #over { display: flex; }
+  #over .big { font-size: clamp(14px, 2.6vw, 26px); letter-spacing: .3em; color: var(--ink); }
+  .btns { display: flex; gap: clamp(16px, 3vw, 32px); }
+  .pbtn { display: flex; flex-direction: column; align-items: center; gap: 8px; background: none; border: 0; padding: 0; cursor: pointer; color: var(--ink); }
+  .pbtn canvas { width: clamp(36px, 5vw, 54px); height: auto; image-rendering: pixelated; display: block; }
+  .pbtn span { font-size: clamp(6px, .8vw, 8px); }
+  .pbtn:hover canvas, .pbtn:focus-visible canvas { animation: blink .5s step-end infinite; }
+  .pbtn:focus-visible { outline: 2px dashed var(--accent); outline-offset: 4px; }
+  @keyframes blink { 0% { filter: invert(1); } 50% { filter: none; } }
+  #keys { margin-top: 12px; color: var(--muted); font-size: 12px; text-align: center; }
+
+  @media (max-width: 560px) {
+    body { padding-top: 160px; }
+    #panel { height: 140px; }
+    .cam { flex-basis: 150px; height: 120px; }
+  }
+</style>
+</head>
+<body data-state="name">
+
+<div id="panel">
+  <div class="cam">
+    <video id="video" playsinline muted></video>
+    <canvas id="faceCv"></canvas>
+    <div id="camMsg">Starting camera…</div>
+    <div id="camAction"></div>
+    <div class="tools"><button id="camToggle" type="button">Hide cam</button></div>
+  </div>
+  <div class="side">
+    <section id="sName">
+      <h2>Who's playing?</h2>
+      <input id="nameInput" maxlength="12" placeholder="Your name" autocomplete="off" spellcheck="false">
+      <p class="hint">Press Enter, then smile to start.</p>
+    </section>
+    <section id="sPlay">
+      <div class="player" id="playerName"></div>
+      <div class="score" id="liveScore">0</div>
+      <p class="hint">Smile = jump · open mouth = duck</p>
+    </section>
+    <section id="sOver">
+      <div class="overTitle">Game over</div>
+      <div id="result"></div>
+    </section>
+    <h3>Rank board</h3>
+    <ol id="board"></ol>
+  </div>
+</div>
+
+<div id="stage">
+  <canvas id="game" width="1600" height="440"></canvas>
+  <div id="banner" class="pixel">SMILE OR PRESS SPACE TO START</div>
+  <div id="over">
+    <div class="big pixel">GAME OVER</div>
+    <div class="btns">
+      <button class="pbtn" id="restartBtn" type="button" title="Restart (Enter or smile)"><canvas id="restartIcon"></canvas><span class="pixel">RESTART</span></button>
+      <button class="pbtn" id="newBtn" type="button" title="New player (N)"><canvas id="newIcon"></canvas><span class="pixel">NEW GAME</span></button>
+    </div>
+  </div>
+</div>
+<p id="keys">Keyboard works too: Space / ↑ jump · ↓ duck · Enter restart · N new player</p>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js"></script>
+<script>
+(function () {
+  'use strict';
+  // ======================= settings =======================
+  var W = 800, H = 220, GROUND = 190;          // logical game size
+  var JUMP_V = -11, GRAVITY = 0.6;
+  var START_SPEED = 6, MAX_SPEED = 13, ACCEL = 0.0012;
+  var JUMP_T = 0.55, DUCK_T = 0.55;            // expression probability thresholds
+  var MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model/';
+  var STORE = 'faceRunnerScores', NAME_KEY = 'faceRunnerName';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var cv = $('game'), ctx = cv.getContext('2d');
+  ctx.scale(cv.width / W, cv.height / H);
+  ctx.imageSmoothingEnabled = false;
+  var ink = '#4a4a48', bg = '#f7f7f2', muted = '#8a8a85';
+  function readColors() {
+    var s = getComputedStyle(document.documentElement);
+    ink = s.getPropertyValue('--ink').trim(); bg = s.getPropertyValue('--bg').trim(); muted = s.getPropertyValue('--muted').trim();
+    drawIcons();
+  }
+
+  // ======================= pixel sprites (original art) =======================
+  // '#' = ink, 'o' = background colour, '.' = transparent
+  var BOT_A = [
+    '....######....',
+    '...########...',
+    '...#o##o###...',
+    '...########...',
+    '....######....',
+    '.....####.....',
+    '..##########..',
+    '.#.########.#.',
+    '.#.########.#.',
+    '...########...',
+    '...##....##...',
+    '...##.....##..',
+    '..###......#..'];
+  var BOT_B = BOT_A.slice(0, 10).concat([
+    '...##....##...',
+    '..##.....##...',
+    '..#......###..']);
+  var BOT_DUCK_A = [
+    '...........######.',
+    '..........########',
+    '..........#o##o###',
+    '.################.',
+    '#.###############.',
+    '..##############..',
+    '...##........##...',
+    '..##..........##..'];
+  var BOT_DUCK_B = BOT_DUCK_A.slice(0, 6).concat([
+    '....##......##....',
+    '...##........##...']);
+  var BOT_HIT = BOT_A.slice();
+  BOT_HIT[2] = '...#x##x###...'.replace(/x/g, 'o');
+  var CRATE = [
+    '##########',
+    '#oooooooo#',
+    '#o#oooo#o#',
+    '#oo#oo#oo#',
+    '#ooo##ooo#',
+    '#ooo##ooo#',
+    '#oo#oo#oo#',
+    '#o#oooo#o#',
+    '#oooooooo#',
+    '##########'];
+  var DRONE_A = [
+    '#####....#####',
+    '......##......',
+    '..##########..',
+    '.##o######o##.',
+    '..#..####..#..',
+    '......##......'];
+  var DRONE_B = ['.###......###.'].concat(DRONE_A.slice(1));
+
+  function sprite(rows, x, y, s) {
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r];
+      for (var c = 0; c < row.length; c++) {
+        var ch = row[c];
+        if (ch === '.') continue;
+        ctx.fillStyle = ch === 'o' ? bg : ink;
+        ctx.fillRect(x + c * s, y + r * s, s, s);
+      }
+    }
+  }
+  function spriteSize(rows, s) { return { w: rows[0].length * s, h: rows.length * s }; }
+
+  // ======================= 8-bit button icons =======================
+  var RESTART_ICON = [
+    '.################.',
+    '##################',
+    '##########o#######',
+    '##########oo######',
+    '#####ooooooooo####',
+    '####oo####oo######',
+    '####o#####o###o###',
+    '####o#########o###',
+    '####o#########o###',
+    '####oo#######oo###',
+    '#####ooooooooo####',
+    '##################',
+    '##################',
+    '.################.'];
+  var NEW_ICON = RESTART_ICON.map(function (row, r) {
+    return row.split('').map(function (ch, c) {
+      if (ch === '.' || r < 2 || r > 11 || c < 2 || c > 15) return ch;
+      var plus = (r >= 6 && r <= 7 && c >= 4 && c <= 13) || (c >= 8 && c <= 9 && r >= 3 && r <= 10);
+      return plus ? 'o' : '#';
+    }).join('');
+  });
+  function drawIcon(canvas, rows) {
+    var s = 4, c = canvas.getContext('2d');
+    canvas.width = rows[0].length * s; canvas.height = rows.length * s;
+    for (var r = 0; r < rows.length; r++) for (var k = 0; k < rows[r].length; k++) {
+      var ch = rows[r][k]; if (ch === '.') continue;
+      c.fillStyle = ch === 'o' ? bg : ink; c.fillRect(k * s, r * s, s, s);
+    }
+  }
+  function drawIcons() { drawIcon($('restartIcon'), RESTART_ICON); drawIcon($('newIcon'), NEW_ICON); }
+
+  // ======================= rank board =======================
+  function loadScores() { try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch (e) { return []; } }
+  function saveScores(list) { try { localStorage.setItem(STORE, JSON.stringify(list)); } catch (e) {} }
+  function ranked() { return loadScores().sort(function (a, b) { return b.score - a.score; }); }
+  var lastEntry = null;
+  function same(a, b) { return a && b && a.name === b.name && a.score === b.score && a.date === b.date; }
+  function renderBoard() {
+    var ol = $('board'), all = ranked(), top = all.slice(0, 10);
+    ol.textContent = '';
+    if (!top.length) { var e = document.createElement('li'); e.className = 'empty'; e.textContent = 'No scores yet. Be the first!'; ol.appendChild(e); }
+    top.forEach(function (row, i) {
+      var li = document.createElement('li');
+      if (state === 'over' && same(row, lastEntry)) li.className = 'me';
+      [String(i + 1), row.name, String(row.score)].forEach(function (t) { var s = document.createElement('span'); s.textContent = t; li.appendChild(s); });
+      ol.appendChild(li);
+    });
+    if (lastEntry) {
+      var rank = all.findIndex(function (r) { return same(r, lastEntry); }) + 1;
+      $('result').textContent = lastEntry.name + ': ' + lastEntry.score + '  ·  rank #' + rank;
+    }
+  }
+  var bestScore = 0;
+  function refreshBest() { var r = ranked(); bestScore = r.length ? r[0].score : 0; }
+
+  // ======================= game state =======================
+  var state = 'name', player = '', overAt = 0;
+  var bot, obstacles, speed, dist, frame, nextGap, ground, clouds;
+  var input = { jumpKey: false, duckKey: false, faceJump: false, faceDuck: false };
+
+  function resetWorld() {
+    bot = { y: GROUND, vy: 0, ducking: false, onGround: true };
+    obstacles = []; speed = START_SPEED; dist = 0; frame = 0; nextGap = 300;
+    ground = []; for (var i = 0; i < 40; i++) ground.push({ x: Math.random() * W, y: GROUND + 4 + Math.random() * 18, w: 1 + Math.random() * 3 | 0 });
+    clouds = []; for (var j = 0; j < 4; j++) clouds.push({ x: Math.random() * W, y: 20 + Math.random() * 70 });
+  }
+  function score() { return Math.floor(dist / 10); }
+
+  function setState(s) {
+    state = s; document.body.dataset.state = s;
+    if (s === 'name') { setTimeout(function () { $('nameInput').focus(); $('nameInput').select(); }, 0); }
+    renderBoard();
+  }
+  function startName() { lastEntry = null; $('nameInput').value = ''; resetWorld(); setState('name'); }
+  function toReady() { resetWorld(); setState('ready'); }
+  function startRun() { resetWorld(); setState('play'); }
+  function crash() {
+    lastEntry = { name: player, score: score(), date: new Date().toISOString() };
+    var list = loadScores(); list.push(lastEntry); saveScores(list); refreshBest();
+    overAt = performance.now();
+    setState('over');
+  }
+
+  // ======================= update / draw =======================
+  function wantsJump() { return input.jumpKey || input.faceJump; }
+  function wantsDuck() { return (input.duckKey || input.faceDuck) && !wantsJump(); }
+
+  function step() {
+    frame++;
+    if (state === 'ready' && wantsJump()) { startRun(); }
+    if (state === 'over' && wantsJump() && performance.now() - overAt > 800) { startRun(); }
+    if (state !== 'play') return;
+
+    speed = Math.min(MAX_SPEED, speed + ACCEL);
+    dist += speed;
+
+    // robot
+    if (wantsJump() && bot.onGround) { bot.vy = JUMP_V; bot.onGround = false; }
+    bot.ducking = wantsDuck() && bot.onGround;
+    if (!bot.onGround) {
+      bot.vy += wantsDuck() ? GRAVITY * 2.5 : GRAVITY;   // duck mid-air = fast drop
+      bot.y += bot.vy;
+      if (bot.y >= GROUND) { bot.y = GROUND; bot.vy = 0; bot.onGround = true; }
+    }
+
+    // obstacles
+    nextGap -= speed;
+    if (nextGap <= 0) {
+      var sc = score(), roll = Math.random(), o;
+      if (sc > 150 && roll < 0.3) {
+        var low = Math.random() < 0.5;                     // low drone: jump · mid drone: duck
+        o = { kind: 'drone', x: W + 10, w: 42, h: 18, bottom: low ? GROUND - 4 : GROUND - 34 };
+      } else {
+        var n = roll < 0.65 ? 1 : 2, tall = sc > 80 && Math.random() < 0.35;
+        o = { kind: 'crate', x: W + 10, w: 30 * n, h: tall ? 60 : 30, n: n, tall: tall, bottom: GROUND };
+      }
+      obstacles.push(o);
+      nextGap = 220 + Math.random() * 260 + speed * 18;
+    }
+    obstacles.forEach(function (o) { o.x -= o.kind === 'drone' ? speed * 1.1 : speed; });
+    obstacles = obstacles.filter(function (o) { return o.x + o.w > -20; });
+    ground.forEach(function (g) { g.x -= speed; if (g.x < -4) { g.x = W + Math.random() * 40; } });
+    clouds.forEach(function (c) { c.x -= speed * 0.15; if (c.x < -50) { c.x = W + Math.random() * 100; c.y = 20 + Math.random() * 70; } });
+
+    // collision (slightly forgiving boxes)
+    var bs = spriteSize(bot.ducking ? BOT_DUCK_A : BOT_A, 3);
+    var bx = 60 + 6, by = bot.y - bs.h + 6, bw = bs.w - 12, bh = bs.h - 8;
+    for (var i = 0; i < obstacles.length; i++) {
+      var o = obstacles[i], ox = o.x + 4, oy = o.bottom - o.h + 4, ow = o.w - 8, oh = o.h - 6;
+      if (bx < ox + ow && bx + bw > ox && by < oy + oh && by + bh > oy) { crash(); return; }
+    }
+  }
+
+  function text(s, x, y, size, color, align) {
+    ctx.fillStyle = color || ink; ctx.textAlign = align || 'left';
+    ctx.font = (size || 10) + 'px "Press Start 2P", ui-monospace, monospace';
+    ctx.fillText(s, x, y);
+  }
+  function pad(n) { return String(n).padStart(5, '0'); }
+
+  function draw() {
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    // sky + ground
+    ctx.fillStyle = muted;
+    clouds.forEach(function (c) { ctx.fillRect(c.x, c.y, 26, 3); ctx.fillRect(c.x + 6, c.y - 3, 14, 3); });
+    ctx.fillStyle = ink; ctx.fillRect(0, GROUND, W, 2);
+    ground.forEach(function (g) { ctx.fillRect(g.x, g.y, g.w * 2, 2); });
+    // obstacles
+    obstacles.forEach(function (o) {
+      if (o.kind === 'crate') {
+        for (var k = 0; k < o.n; k++) {
+          sprite(CRATE, o.x + k * 30, GROUND - 30, 3);
+          if (o.tall) sprite(CRATE, o.x + k * 30, GROUND - 60, 3);
+        }
+      } else {
+        sprite((frame >> 3) % 2 ? DRONE_A : DRONE_B, o.x, o.bottom - o.h, 3);
+      }
+    });
+    // robot
+    var rows = state === 'over' ? BOT_HIT
+      : bot.ducking ? ((frame >> 3) % 2 ? BOT_DUCK_A : BOT_DUCK_B)
+      : !bot.onGround || state !== 'play' ? BOT_A
+      : ((frame >> 3) % 2 ? BOT_A : BOT_B);
+    var sz = spriteSize(rows, 3);
+    sprite(rows, 60, bot.y - sz.h, 3);
+    // score
+    text('BEST ' + pad(Math.max(bestScore, score())) + '  ' + pad(score()), W - 12, 24, 10, ink, 'right');
+    if (player && state !== 'name') text(player.toUpperCase(), 12, 24, 10, muted, 'left');
+    $('liveScore').textContent = score();
+  }
+
+  var acc = 0, last = performance.now();
+  function loop(now) {
+    acc += Math.min(100, now - last); last = now;
+    while (acc >= 1000 / 60) { step(); acc -= 1000 / 60; }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ======================= keyboard + buttons =======================
+  var nameInput = $('nameInput');
+  try { nameInput.value = localStorage.getItem(NAME_KEY) || ''; } catch (e) {}
+  nameInput.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter' && nameInput.value.trim()) {
+      player = nameInput.value.trim().slice(0, 12);
+      try { localStorage.setItem(NAME_KEY, player); } catch (err) {}
+      $('playerName').textContent = player;
+      nameInput.blur();
+      toReady();
+    }
+  });
+  var JUMP_KEYS = [' ', 'ArrowUp', 'w', 'W'];
+  window.addEventListener('keydown', function (e) {
+    if (state === 'name') { if (e.target !== nameInput) { nameInput.focus(); } return; }
+    if (JUMP_KEYS.indexOf(e.key) >= 0) { e.preventDefault(); input.jumpKey = true; }
+    else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') { e.preventDefault(); input.duckKey = true; }
+    else if (state === 'over' && e.key === 'Enter') { e.preventDefault(); startRun(); }
+    else if (state === 'over' && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); startName(); }
+  });
+  window.addEventListener('keyup', function (e) {
+    if (JUMP_KEYS.indexOf(e.key) >= 0) input.jumpKey = false;
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') input.duckKey = false;
+  });
+  $('restartBtn').addEventListener('click', function () { this.blur(); startRun(); });
+  $('newBtn').addEventListener('click', function () { this.blur(); startName(); });
+  $('camToggle').addEventListener('click', function () {
+    var off = $('panel').classList.toggle('nocam'); this.textContent = off ? 'Show cam' : 'Hide cam';
+  });
+  cv.addEventListener('pointerdown', function () { if (state === 'ready') startRun(); });
+
+  // ======================= face control =======================
+  var video = $('video'), faceCv = $('faceCv'), fctx = faceCv.getContext('2d');
+  function camMsg(t) { $('camMsg').textContent = t; $('camMsg').style.display = t ? 'grid' : 'none'; }
+  async function startFace() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camMsg('No camera API here. Use the keyboard.'); return; }
+    try {
+      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
+      await video.play();
+    } catch (e) { camMsg('Camera blocked. Allow camera access, or play with the keyboard.'); return; }
+    if (typeof faceapi === 'undefined') { camMsg('Face model could not load (offline?). Use the keyboard.'); return; }
+    camMsg('Loading face model…');
+    try {
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+    } catch (e) { camMsg('Face model could not load. Use the keyboard.'); return; }
+    camMsg('');
+    faceCv.width = video.videoWidth || 320; faceCv.height = video.videoHeight || 240;
+    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 });
+    (async function tick() {
+      var det = null;
+      try { det = await faceapi.detectSingleFace(video, opts).withFaceExpressions(); } catch (e) {}
+      fctx.clearRect(0, 0, faceCv.width, faceCv.height);
+      var active = state !== 'name', label = 'no face';
+      input.faceJump = input.faceDuck = false;
+      if (det) {
+        var ex = det.expressions, b = det.detection.box;
+        var j = ex.happy > JUMP_T, d = !j && ex.surprised > DUCK_T;
+        if (active) { input.faceJump = j; input.faceDuck = d; }
+        label = j ? 'JUMP' : d ? 'DUCK' : 'run';
+        fctx.strokeStyle = j ? '#2ecc71' : d ? '#ff8c00' : '#fff'; fctx.lineWidth = 3;
+        fctx.strokeRect(b.x, b.y, b.width, b.height);
+        // expression bars (canvas is mirrored, so draw on the right to read on the left)
+        [['happy', ex.happy, '#2ecc71'], ['surprised', ex.surprised, '#ff8c00'], ['neutral', ex.neutral, '#999']].forEach(function (row, i) {
+          fctx.fillStyle = row[2]; fctx.fillRect(faceCv.width - 10 - row[1] * 100, 10 + i * 14, row[1] * 100, 10);
+        });
+      }
+      $('camAction').textContent = active ? label : label + ' (paused)';
+      setTimeout(tick, 60);
+    })();
+  }
+
+  // ======================= go =======================
+  readColors();
+  if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  if (document.fonts) document.fonts.ready.then(drawIcons);
+  refreshBest();
+  resetWorld();
+  setState('name');
+  requestAnimationFrame(loop);
+  startFace();
+})();
+</script>
+</body>
+</html>
