@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Neko Runner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -98,6 +98,40 @@
   @media (max-width: 480px) {
     .cam { flex-basis: 150px; height: 168px; }
   }
+  .k-touch, #rotate { display: none; }
+  #rotate { margin: 8px 0 0; padding: 0 16px; color: var(--muted); font-size: 12px; text-align: center; }
+
+  /* ---- phones and tablets ---- */
+  @media (pointer: coarse) {
+    #stage { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    .k-desk { display: none; }
+    .k-touch { display: inline; }
+    /* while running: camera shrinks to a corner preview */
+    body[data-state="ready"] #panel, body[data-state="play"] #panel {
+      width: auto; height: auto; padding: 4px;
+      right: max(8px, env(safe-area-inset-right, 0px)); top: max(8px, env(safe-area-inset-top, 0px));
+    }
+    body[data-state="ready"] .side, body[data-state="play"] .side,
+    body[data-state="ready"] .tools, body[data-state="play"] .tools { display: none; }
+    body[data-state="ready"] .cam, body[data-state="play"] .cam { flex: 0 0 112px; width: 112px; height: 84px; }
+    body[data-state="ready"] #camAction, body[data-state="play"] #camAction { font-size: 13px; }
+  }
+  @media (pointer: coarse) and (orientation: landscape) {
+    body { padding: 0; }
+    #keys {
+      position: fixed; left: 0; right: 0; margin: 0;
+      bottom: max(6px, env(safe-area-inset-bottom, 0px));
+    }
+    /* name entry and game over: sidebar on the left, game stays visible */
+    body[data-state="name"] #panel, body[data-state="over"] #panel {
+      left: max(8px, env(safe-area-inset-left, 0px)); right: auto; top: 8px; bottom: 8px;
+      height: auto; width: min(300px, 36vw); flex-direction: column; gap: 8px;
+    }
+    body[data-state="name"] .cam, body[data-state="over"] .cam { flex: 0 0 auto; width: 100%; height: 110px; }
+  }
+  @media (pointer: coarse) and (orientation: portrait) {
+    #rotate { display: block; }
+  }
 </style>
 </head>
 <body data-state="name">
@@ -143,7 +177,8 @@
     </div>
   </div>
 </div>
-<p id="keys">Keyboard works too: Space / ↑ jump · ↓ duck · Enter restart · N new player</p>
+<p id="keys"><span class="k-desk">Keyboard works too: Space / ↑ jump · ↓ duck · Enter restart · N new player</span><span class="k-touch">Tap = jump · swipe down = duck · or just use your face</span></p>
+<p id="rotate">Turn your phone sideways for a bigger game.</p>
 
 <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js"></script>
 <script>
@@ -452,7 +487,26 @@
   $('camToggle').addEventListener('click', function () {
     var off = $('panel').classList.toggle('nocam'); this.textContent = off ? 'Show cam' : 'Hide cam';
   });
-  cv.addEventListener('pointerdown', function () { if (state === 'ready') startRun(); });
+  cv.addEventListener('mousedown', function () { if (state === 'ready') startRun(); });
+
+  // touch: tap = jump (hold for as long as the finger is down), swipe down = duck
+  var stage = $('stage'), touchY = null;
+  stage.addEventListener('touchstart', function (e) {
+    if (e.target.closest('button')) return;              // let RESTART / NEW GAME taps through
+    e.preventDefault();
+    touchY = e.changedTouches[0].clientY;
+    if (state === 'ready') startRun();
+    else if (state === 'over') { if (performance.now() - overAt > 800) startRun(); }
+    else if (state === 'play') input.jumpKey = true;
+  }, { passive: false });
+  stage.addEventListener('touchmove', function (e) {
+    if (touchY === null) return;
+    e.preventDefault();
+    if (e.changedTouches[0].clientY - touchY > 30) { input.jumpKey = false; input.duckKey = true; }
+  }, { passive: false });
+  function touchDone() { touchY = null; input.jumpKey = false; input.duckKey = false; }
+  stage.addEventListener('touchend', touchDone);
+  stage.addEventListener('touchcancel', touchDone);
 
   // ======================= face control =======================
   var video = $('video'), faceCv = $('faceCv'), fctx = faceCv.getContext('2d');
