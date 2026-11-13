@@ -160,7 +160,7 @@
       <div id="result"></div>
       <button id="newGame" type="button">New game</button>
     </section>
-    <h3>Rank board</h3>
+    <h3 id="boardTitle">Rank board</h3>
     <ol id="board"></ol>
     <p class="hint" id="boardHint">Enter or smile = play again · N or NEW GAME = new player</p>
   </div>
@@ -311,9 +311,16 @@
   // ======================= rank board =======================
   function loadScores() { try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch (e) { return []; } }
   function saveScores(list) { try { localStorage.setItem(STORE, JSON.stringify(list)); } catch (e) {} }
-  function ranked() { return loadScores().sort(function (a, b) { return b.score - a.score; }); }
+  // live shared board (Firebase, see the module script below); falls back to this browser's own scores
+  var cloudTop = null, lastRank = 0;
+  window.nekoCloudTop = function (list) { cloudTop = list; $('boardTitle').textContent = 'Rank board · live'; refreshBest(); renderBoard(); };
+  function ranked() { return cloudTop ? cloudTop.slice() : loadScores().sort(function (a, b) { return b.score - a.score; }); }
   var lastEntry = null;
-  function same(a, b) { return a && b && a.name === b.name && a.score === b.score && a.date === b.date; }
+  function same(a, b) {
+    if (!a || !b) return false;
+    if (a.id || b.id) return a.id === b.id;
+    return a.name === b.name && a.score === b.score && a.date === b.date;
+  }
   function renderBoard() {
     var ol = $('board'), all = ranked(), top = all.slice(0, 10);
     ol.textContent = '';
@@ -325,8 +332,8 @@
       ol.appendChild(li);
     });
     if (lastEntry) {
-      var rank = all.findIndex(function (r) { return same(r, lastEntry); }) + 1;
-      $('result').textContent = lastEntry.name + ': ' + lastEntry.score + '  ·  rank #' + rank;
+      var rank = lastRank || all.findIndex(function (r) { return same(r, lastEntry); }) + 1;
+      $('result').textContent = lastEntry.name + ': ' + lastEntry.score + (rank ? '  ·  rank #' + rank : '  ·  ranking…');
     }
   }
   var bestScore = 0;
@@ -354,8 +361,15 @@
   function toReady() { resetWorld(); setState('ready'); }
   function startRun() { resetWorld(); setState('play'); }
   function crash() {
-    lastEntry = { name: player, score: score(), date: new Date().toISOString() };
-    var list = loadScores(); list.push(lastEntry); saveScores(list); refreshBest();
+    var entry = lastEntry = { name: player, score: score(), date: new Date().toISOString() };
+    var list = loadScores(); list.push(entry); saveScores(list); refreshBest();
+    lastRank = 0;
+    if (window.NekoCloud) {
+      window.NekoCloud.submit(entry.name, entry.score).then(function (r) {
+        if (lastEntry !== entry) return;                 // a newer run already started
+        entry.id = r.id; lastRank = r.rank; renderBoard();
+      }).catch(function () {});
+    }
     overAt = performance.now();
     setState('over');
   }
@@ -559,6 +573,29 @@
   requestAnimationFrame(loop);
   startFace();
 })();
+</script>
+<script type="module">
+  // Shared live rank board. Rules on the server only allow adding a score (no edits or deletes).
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+  import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, limit, where, onSnapshot, getCountFromServer }
+    from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+  const app = initializeApp({
+    apiKey: 'AIzaSyDFDOLsZ3R_b1qktQubxg053KMYEerxgKY',          // public web key, safe to ship
+    authDomain: 'neko-runner-c5f6cf.firebaseapp.com',
+    projectId: 'neko-runner-c5f6cf',
+    appId: '1:51288610872:web:2c2ceb514d67bf56a06ecd'
+  });
+  const scores = collection(getFirestore(app), 'scores');
+  onSnapshot(query(scores, orderBy('score', 'desc'), limit(20)),
+    (snap) => window.nekoCloudTop(snap.docs.map((d) => ({ id: d.id, name: d.data().name, score: d.data().score }))),
+    (err) => console.warn('Live rank board unavailable, using local scores.', err));
+  window.NekoCloud = {
+    async submit(name, score) {
+      const ref = await addDoc(scores, { name: name.slice(0, 12), score, date: serverTimestamp() });
+      const higher = await getCountFromServer(query(scores, where('score', '>', score)));
+      return { id: ref.id, rank: higher.data().count + 1 };
+    }
+  };
 </script>
 </body>
 </html>
