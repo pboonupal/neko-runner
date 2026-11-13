@@ -170,38 +170,43 @@
 
   // ======================= pixel sprites (original art) =======================
   // '#' = ink, 'o' = background colour, '.' = transparent, other letters = CAT colours
-  // cat runner: K outline, D shade, B body, L highlight, W eye white, P pupil
-  var CAT = { K: '#282836', D: '#464960', B: '#5c607c', L: '#8090b2', W: '#fafafa', P: '#1e1e28' };
-  var CAT_TOP = [
-    '.B.......KK...KK.',
-    '.BB......KBK.KLK.',
-    '..B......KBBBBLBK',
-    '..BB.....BWWBBWWB',
-    '...B.....BWPBBWPB',
-    '...BB....BBBBBBBB',
-    '....B...DBBBLBBB.',
-    '....DBBBBBBBBBBB.',
-    '...DDBBBLLBBBBBK.',
-    '...DBBBBBBBBBBBK.',
-    '...DDBBBBBBBBBK..'];
-  var BOT_A = CAT_TOP.concat([
-    '...KK.K....KB.KK.',
-    '..KK..KK...K...KK']);
-  var BOT_B = CAT_TOP.concat([
-    '....KK.KK.KK.....',
-    '....K...KKK......']);
+  // cat runner, traced from the reference art: K outline, B body, L highlight, W eye white
+  var CAT = { K: '#282830', B: '#565c7c', L: '#7a8aa6', W: '#fafafa' };
+  var CAT_S = 2;                                   // cat pixel size (obstacles stay at 3)
+  var BOT_A = [
+    '.............KK.....KK..',
+    'KB...........KBBB...KK..',
+    'KBB..........BBBBBBBBKK.',
+    '.KBBB........KBBBBBLLBK.',
+    '..KBBB.......BBBBBBLLLBK',
+    '...KBBB......BBWWBBBBWWB',
+    '.....BBK.....BWKKWBBWKKW',
+    '......KK.KKKKBWKKWBBWKKW',
+    '......KKKLLBKBBWWBBBBWWB',
+    '.......KLBBBBKBBBBBBBBB.',
+    '......KBBBBBBBKBBBBBBK..',
+    '.....KBBBBBBBBBLLBKBBK..',
+    '.....KBBBBBBBBBLLKKKBBK.',
+    '....KBBBKBBBBBKKKK..KBBK',
+    '...KKBBKKKBBBK...K...KKK',
+    '...KBKK...KKK...........',
+    '....KK..................'];
+  var BOT_B = BOT_A.concat(['........................']);              // one row of air = gallop bob
   var BOT_DUCK_A = [
-    '..........KK...KK..',
-    'B.........KBK.KLK..',
-    'BB.......DBWWBBWWB.',
-    '.BB......DBWPBBWPB.',
-    '..DBBBBBBBBBBBBBBK.',
-    '..DDBBLLBBBBBBBBK..',
-    '..DDBBBBBBBBBBBK...',
-    '...KK.K....KK.KK...'];
-  var BOT_DUCK_B = BOT_DUCK_A.slice(0, 7).concat([
-    '....KK.K..K.KK.....']);
-  var BOT_HIT = BOT_A.map(function (r) { return r.replace(/P/g, 'W'); });   // wide-eyed shock
+    '.............KK.....KK..',
+    'KBB..........BBBBBBBBKK.',
+    '.KBBB........KBBBBBLLBK.',
+    '...KBBB......BBWWBBBBWWB',
+    '.....BBK.....BWKKWBBWKKW',
+    '......KK.KKKKBWKKWBBWKKW',
+    '......KKKLLBKBBWWBBBBWWB',
+    '......KBBBBBBBKBBBBBBK..',
+    '.....KBBBBBBBBBLLBKBBK..',
+    '....KBBBKBBBBBKKKK..KBBK',
+    '...KKBBKKKBBBK...K...KKK',
+    '....KK..................'];
+  var BOT_DUCK_B = BOT_DUCK_A;
+  var BOT_HIT = BOT_A.map(function (r) { return r.replace(/WKKW/g, 'WWWW'); });   // wide-eyed shock
   var CRATE = [
     '##########',
     '#oooooooo#',
@@ -362,8 +367,8 @@
     clouds.forEach(function (c) { c.x -= speed * 0.15; if (c.x < -50) { c.x = W + Math.random() * 100; c.y = 20 + Math.random() * 70; } });
 
     // collision (slightly forgiving boxes)
-    var bs = spriteSize(bot.ducking ? BOT_DUCK_A : BOT_A, 3);
-    var bx = 60 + 15, by = bot.y - bs.h + 6, bw = bs.w - 21, bh = bs.h - 8;   // skip the tail
+    var bs = spriteSize(bot.ducking ? BOT_DUCK_A : BOT_A, CAT_S);
+    var bx = 60 + 14, by = bot.y - bs.h + 6, bw = bs.w - 18, bh = bs.h - 8;   // skip the tail
     for (var i = 0; i < obstacles.length; i++) {
       var o = obstacles[i], ox = o.x + 4, oy = o.bottom - o.h + 4, ow = o.w - 8, oh = o.h - 6;
       if (bx < ox + ow && bx + bw > ox && by < oy + oh && by + bh > oy) { crash(); return; }
@@ -400,8 +405,8 @@
       : bot.ducking ? ((frame >> 3) % 2 ? BOT_DUCK_A : BOT_DUCK_B)
       : !bot.onGround || state !== 'play' ? BOT_A
       : ((frame >> 3) % 2 ? BOT_A : BOT_B);
-    var sz = spriteSize(rows, 3);
-    sprite(rows, 60, bot.y - sz.h, 3);
+    var sz = spriteSize(rows, CAT_S);
+    sprite(rows, 60, bot.y - sz.h, CAT_S);
     // score
     text('BEST ' + pad(Math.max(bestScore, score())) + '  ' + pad(score()), W - 12, 24, 10, ink, 'right');
     if (player && state !== 'name') text(player.toUpperCase(), 12, 24, 10, muted, 'left');
