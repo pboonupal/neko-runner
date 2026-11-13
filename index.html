@@ -169,39 +169,39 @@
   }
 
   // ======================= pixel sprites (original art) =======================
-  // '#' = ink, 'o' = background colour, '.' = transparent
-  var BOT_A = [
-    '....######....',
-    '...########...',
-    '...#o##o###...',
-    '...########...',
-    '....######....',
-    '.....####.....',
-    '..##########..',
-    '.#.########.#.',
-    '.#.########.#.',
-    '...########...',
-    '...##....##...',
-    '...##.....##..',
-    '..###......#..'];
-  var BOT_B = BOT_A.slice(0, 10).concat([
-    '...##....##...',
-    '..##.....##...',
-    '..#......###..']);
+  // '#' = ink, 'o' = background colour, '.' = transparent, other letters = CAT colours
+  // cat runner: K outline, D shade, B body, L highlight, W eye white, P pupil
+  var CAT = { K: '#282836', D: '#464960', B: '#5c607c', L: '#8090b2', W: '#fafafa', P: '#1e1e28' };
+  var CAT_TOP = [
+    '.B.......KK...KK.',
+    '.BB......KBK.KLK.',
+    '..B......KBBBBLBK',
+    '..BB.....BWWBBWWB',
+    '...B.....BWPBBWPB',
+    '...BB....BBBBBBBB',
+    '....B...DBBBLBBB.',
+    '....DBBBBBBBBBBB.',
+    '...DDBBBLLBBBBBK.',
+    '...DBBBBBBBBBBBK.',
+    '...DDBBBBBBBBBK..'];
+  var BOT_A = CAT_TOP.concat([
+    '...KK.K....KB.KK.',
+    '..KK..KK...K...KK']);
+  var BOT_B = CAT_TOP.concat([
+    '....KK.KK.KK.....',
+    '....K...KKK......']);
   var BOT_DUCK_A = [
-    '...........######.',
-    '..........########',
-    '..........#o##o###',
-    '.################.',
-    '#.###############.',
-    '..##############..',
-    '...##........##...',
-    '..##..........##..'];
-  var BOT_DUCK_B = BOT_DUCK_A.slice(0, 6).concat([
-    '....##......##....',
-    '...##........##...']);
-  var BOT_HIT = BOT_A.slice();
-  BOT_HIT[2] = '...#x##x###...'.replace(/x/g, 'o');
+    '..........KK...KK..',
+    'B.........KBK.KLK..',
+    'BB.......DBWWBBWWB.',
+    '.BB......DBWPBBWPB.',
+    '..DBBBBBBBBBBBBBBK.',
+    '..DDBBLLBBBBBBBBK..',
+    '..DDBBBBBBBBBBBK...',
+    '...KK.K....KK.KK...'];
+  var BOT_DUCK_B = BOT_DUCK_A.slice(0, 7).concat([
+    '....KK.K..K.KK.....']);
+  var BOT_HIT = BOT_A.map(function (r) { return r.replace(/P/g, 'W'); });   // wide-eyed shock
   var CRATE = [
     '##########',
     '#oooooooo#',
@@ -228,7 +228,7 @@
       for (var c = 0; c < row.length; c++) {
         var ch = row[c];
         if (ch === '.') continue;
-        ctx.fillStyle = ch === 'o' ? bg : ink;
+        ctx.fillStyle = ch === 'o' ? bg : ch === '#' ? ink : CAT[ch];
         ctx.fillRect(x + c * s, y + r * s, s, s);
       }
     }
@@ -363,7 +363,7 @@
 
     // collision (slightly forgiving boxes)
     var bs = spriteSize(bot.ducking ? BOT_DUCK_A : BOT_A, 3);
-    var bx = 60 + 6, by = bot.y - bs.h + 6, bw = bs.w - 12, bh = bs.h - 8;
+    var bx = 60 + 15, by = bot.y - bs.h + 6, bw = bs.w - 21, bh = bs.h - 8;   // skip the tail
     for (var i = 0; i < obstacles.length; i++) {
       var o = obstacles[i], ox = o.x + 4, oy = o.bottom - o.h + 4, ow = o.w - 8, oh = o.h - 6;
       if (bx < ox + ow && bx + bw > ox && by < oy + oh && by + bh > oy) { crash(); return; }
